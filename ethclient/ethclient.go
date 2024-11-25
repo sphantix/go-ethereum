@@ -184,12 +184,15 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 		}
 	}
 	// Fill the sender cache of transactions in the block.
-	txs := make([]*types.Transaction, len(body.Transactions))
-	for i, tx := range body.Transactions {
+	txs := []*types.Transaction{}
+	for _, tx := range body.Transactions {
+		if tx.tx == nil {
+			continue
+		}
 		if tx.From != nil {
 			setSenderFromServer(tx.tx, *tx.From, body.Hash)
 		}
-		txs[i] = tx.tx
+		txs = append(txs, tx.tx)
 	}
 
 	return types.NewBlockWithHeader(head).WithBody(
@@ -234,6 +237,13 @@ type txExtraInfo struct {
 
 func (tx *rpcTransaction) UnmarshalJSON(msg []byte) error {
 	if err := json.Unmarshal(msg, &tx.tx); err != nil {
+		// Check if error is due to unsupported transaction type
+		if err == types.ErrTxTypeNotSupported {
+			// Skip this transaction by setting tx to nil
+			tx.tx = nil
+			// Still try to unmarshal the extra info
+			return json.Unmarshal(msg, &tx.txExtraInfo)
+		}
 		return err
 	}
 	return json.Unmarshal(msg, &tx.txExtraInfo)
